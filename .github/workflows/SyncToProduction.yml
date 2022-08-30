@@ -1,0 +1,26 @@
+name: Sync To UAT
+on:
+  push:
+    branches:
+      - UAT
+
+jobs:
+  sync-branches:
+    runs-on: ubuntu-latest
+    name: Syncing branches
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set up Node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12
+      - name: Opening pull request
+        id: pull
+        uses: tretuna/sync-branches@1.4.0
+        with:
+          GITHUB_TOKEN: ${{secrets.TOKEN_GITHUB}}
+          FROM_BRANCH: "UAT"
+          TO_BRANCH: "Production"
+          PULL_REQUEST_TITLE: "CIPP-API Update"
+          PULL_REQUEST_BODY: "CIPP-API/UAT has a new update for CIPP-API/Production Please Review/test https://cipp-uat.quartetservice.com and approve if everything is working." 
