@@ -22,7 +22,7 @@ jobs:
           GITHUB_TOKEN: ${{secrets.TOKEN_GITHUB}}
           FROM_BRANCH: "UAT"
           TO_BRANCH: "Production"
-          PULL_REQUEST_TITLE: "CIPP-API Update"
+          PULL_REQUEST_TITLE: "CIPP-API Update To Production"
           PULL_REQUEST_BODY: "CIPP-API/UAT has a new update for CIPP-API/Production Please Review/test https://cipp-uat.quartetservice.com and approve if everything is working." 
       - name: Send email
         id: send_email
