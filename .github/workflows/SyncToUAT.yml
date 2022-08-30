@@ -22,3 +22,5 @@ jobs:
           GITHUB_TOKEN: ${{secrets.TOKEN_GITHUB}}
           FROM_BRANCH: "master"
           TO_BRANCH: "UAT"
+          PULL_REQUEST_TITLE: "CIPP-API Update To UAT"
+          PULL_REQUEST_BODY: "Applying updates to UAT" 
