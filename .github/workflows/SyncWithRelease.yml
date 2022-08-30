@@ -16,3 +16,4 @@ jobs:
           owner: quartetcipp
           base: master
           head: master
+          token: ${{secrets.GITHUBACTIONTOKEN}}
