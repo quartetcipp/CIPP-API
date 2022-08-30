@@ -1,4 +1,4 @@
-name: Sync To UAT
+name: Sync To Production
 on:
   push:
     branches:
