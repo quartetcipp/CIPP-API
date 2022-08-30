@@ -24,7 +24,7 @@ jobs:
           TO_BRANCH: "Production"
           PULL_REQUEST_TITLE: "CIPP-API Update To Production"
           PULL_REQUEST_BODY: "CIPP-API/UAT has a new update for CIPP-API/Production Please Review/test https://cipp-uat.quartetservice.com and approve if everything is working." 
-          REVIEWERS: '["quartetcipp"]'
+          REVIEWERS: '["lbrunton0"]'
       - name: Send email
         id: send_email
         uses: dawidd6/action-send-mail@v3.6.1
