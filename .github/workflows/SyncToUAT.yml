@@ -9,18 +9,27 @@ jobs:
     runs-on: ubuntu-latest
     name: Syncing branches
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Set up Node
-        uses: actions/setup-node@v1
+      - name: Checkout repository
+        uses: actions/checkout@master
+      - uses: connor-baer/action-sync-branch@main
         with:
-          node-version: 12
-      - name: Opening pull request
-        id: pull
-        uses: tretuna/sync-branches@1.4.0
-        with:
-          GITHUB_TOKEN: ${{secrets.TOKEN_GITHUB}}
-          FROM_BRANCH: "master"
-          TO_BRANCH: "UAT"
-          PULL_REQUEST_TITLE: "CIPP-API Update To UAT"
-          PULL_REQUEST_BODY: "Applying updates to UAT" 
+          branch: UAT
+          token: ${{ secrets.TOKEN_GITHUB }}
+          force: true
+    
+    
+    #  - name: Checkout
+    #    uses: actions/checkout@v2
+    #  - name: Set up Node
+    #    uses: actions/setup-node@v1
+    #    with:
+    #      node-version: 12
+    #  - name: Opening pull request
+    #    id: pull
+    #    uses: tretuna/sync-branches@1.4.0
+    #    with:
+    #      GITHUB_TOKEN: ${{secrets.TOKEN_GITHUB}}
+    #      FROM_BRANCH: "master"
+    #      TO_BRANCH: "UAT"
+    #      PULL_REQUEST_TITLE: "CIPP-API Update To UAT"
+    #      PULL_REQUEST_BODY: "Applying updates to UAT" 
