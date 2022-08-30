@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch: # on button click
 
 jobs:
   sync-branches:
