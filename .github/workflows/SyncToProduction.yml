@@ -24,31 +24,31 @@ jobs:
           TO_BRANCH: "Production"
           PULL_REQUEST_TITLE: "CIPP-API Update To Production"
           PULL_REQUEST_BODY: "CIPP-API/UAT has a new update for CIPP-API/Production Please Review/test https://cipp-uat.quartetservice.com and approve if everything is working." 
-          REVIEWERS: '["quartetcipp"]'
-      - name: Send email
-        id: send_email
-        uses: dawidd6/action-send-mail@v3.6.1
-        with:
+          REVIEWERS: '["lbrunton0"]'
+#      - name: Send email
+#        id: send_email
+#        uses: dawidd6/action-send-mail@v3.6.1
+#        with:
           # SMTP server address
-          server_address: quartetservice-com.mail.protection.outlook.com.
+#          server_address: quartetservice-com.mail.protection.outlook.com.
           
           # SMTP server port
-          server_port: 25
+#          server_port: 25
           
           # Subject of mail message
-          subject: "CIPP-API Update Pending Approval (Pull Request ${{ steps.pull.PULL_REQUEST_NUMBER }})"
+#          subject: "CIPP-API Update Pending Approval (Pull Request ${{ steps.pull.PULL_REQUEST_NUMBER }})"
           
           # Recipients mail addresses (separated with comma)
-          to: lbrunton@quartetservice.com
+#          to: lbrunton@quartetservice.com
           
           # Full name of mail sender (might be with an email address specified in <>)
-          from: CIPP-API@github.quartetservice.com
+#          from: CIPP-API@github.quartetservice.com
           
           # Whether this connection use TLS (default is true if server_port is 465)
           #secure:
           
           # Body of mail message (might be a filename prefixed with file:// to read from)
-          body: "Please Test https://cipp-uat.quartetservice.com and validate it's working then go to ${{ steps.pull.PULL_REQUEST_URL }}"
+#          body: "Please Test https://cipp-uat.quartetservice.com and validate it's working then go to ${{ steps.pull.PULL_REQUEST_URL }}"
           
           # HTML body of mail message (might be a filename prefixed with file:// to read from)
           #html_body: # optional
