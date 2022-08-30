@@ -3,7 +3,13 @@ on:
   push:
     branches:
       - UAT
-
+  workflow_run:
+    workflows: ["Sync To UAT"]
+    types: [completed]
+    branches:
+      - UAT
+  workflow_dispatch: # on button click
+  
 jobs:
   sync-branches:
     runs-on: ubuntu-latest
@@ -19,7 +25,7 @@ jobs:
         id: pull
         uses: tretuna/sync-branches@1.4.0
         with:
-          GITHUB_TOKEN: ${{secrets.TOKEN_GITHUB}}
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
           FROM_BRANCH: "UAT"
           TO_BRANCH: "Production"
           PULL_REQUEST_TITLE: "CIPP-API Update To Production"

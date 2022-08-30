@@ -1,8 +1,8 @@
-name: Sync Fork
+name: Sync Fork with Release
 
 on:
   schedule:
-    - cron: '0,30 11-19 * * MON-FRI' # every 30 minutes
+    - cron: '30 11-19 * * MON-FRI' #Runs every 30th minute past the 11, 12, 13, 14, 15, 16, 17, 18 and 19th hour on Mon, Tue, Wed, Thu and Fri.
   workflow_dispatch: # on button click
 
 jobs:
