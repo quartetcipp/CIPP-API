@@ -1,0 +1,19 @@
+name: Sync To UAT
+on:
+  push:
+    branches:
+      - Production
+  workflow_dispatch: # on button click
+
+jobs:
+  sync-branches:
+    runs-on: ubuntu-latest
+    name: Syncing back to master
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@master
+      - uses: connor-baer/action-sync-branch@main
+        with:
+          branch: master
+          token: ${{secrets.GITHUB_TOKEN}}
+          force: true
