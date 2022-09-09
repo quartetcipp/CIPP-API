@@ -11,9 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: tgymnich/fork-sync@v1.4
+      - uses: tgymnich/fork-sync@v1.6
         with:
-          owner: quartetcipp
+          owner: KelvinTegelaar
           base: master
           head: master
           token: ${{secrets.GITHUBACTIONTOKEN}}
