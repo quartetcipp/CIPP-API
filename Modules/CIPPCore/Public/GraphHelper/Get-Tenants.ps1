@@ -8,7 +8,10 @@ function Get-Tenants {
         [switch]$SkipList,
         [Parameter( ParameterSetName = 'Standard')]
         [switch]$IncludeAll,
-        [switch]$IncludeErrors
+        [switch]$IncludeErrors,
+        [switch]$SkipDomains,
+        [switch]$TriggerRefresh,
+        [switch]$CleanOld
     )
 
     $TenantsTable = Get-CippTable -tablename 'Tenants'
@@ -28,19 +31,29 @@ function Get-Tenants {
     }
     $IncludedTenantsCache = Get-CIPPAzDataTableEntity @TenantsTable -Filter $Filter
 
-    if (($IncludedTenantsCache | Measure-Object).Count -gt 0) {
-        try {
-            $LastRefresh = ($IncludedTenantsCache | Where-Object { $_.customerId } | Sort-Object LastRefresh -Descending | Select-Object -First 1).LastRefresh | Get-Date -ErrorAction Stop
-        } catch { $LastRefresh = $false }
-    } else {
-        $LastRefresh = $false
+    if (($IncludedTenantsCache | Measure-Object).Count -eq 0) {
+        $BuildRequired = $true
     }
-    if (!$LastRefresh -or $LastRefresh -lt (Get-Date).Addhours(-24).ToUniversalTime()) {
 
-        # Query for active relationships
-        $GDAPRelationships = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships?`$filter=status eq 'active'&`$select=customer,autoExtendDuration,endDateTime"
+    if ($CleanOld) {
+        $GDAPRelationships = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships?`$filter=status eq 'active' and not startsWith(displayName,'MLT_')&`$select=customer,autoExtendDuration,endDateTime" -NoAuthCheck:$true
+        $GDAPList = foreach ($Relationship in $GDAPRelationships) {
+            [PSCustomObject]@{
+                customerId      = $Relationship.customer.tenantId
+                displayName     = $Relationship.customer.displayName
+                autoExtend      = ($Relationship.autoExtendDuration -ne 'PT0S')
+                relationshipEnd = $Relationship.endDateTime
+            }
+        }
+        $CurrentTenants = Get-CIPPAzDataTableEntity @TenantsTable -Filter "PartitionKey eq 'Tenants' and Excluded eq false"
+        $CurrentTenants | Where-Object { $_.customerId -notin $GDAPList.customerId } | ForEach-Object {
+            Remove-AzDataTableEntity @TenantsTable -Entity $_
+        }
+    }
 
-        # Flatten gdap relationship
+    if ($BuildRequired -or $TriggerRefresh.IsPresent) {
+        #get the full list of tenants
+        $GDAPRelationships = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships?`$filter=status eq 'active' and not startsWith(displayName,'MLT_')&`$select=customer,autoExtendDuration,endDateTime" -NoAuthCheck:$true
         $GDAPList = foreach ($Relationship in $GDAPRelationships) {
             [PSCustomObject]@{
                 customerId      = $Relationship.customer.tenantId
@@ -50,43 +63,59 @@ function Get-Tenants {
             }
         }
 
-        # Group relationships, build object for adding to tables
         $ActiveRelationships = $GDAPList | Where-Object { $_.customerId -notin $SkipListCache.customerId }
-        $TenantList = $ActiveRelationships | Group-Object -Property customerId | ForEach-Object -Parallel {
-            Import-Module .\Modules\CIPPCore
+        $TenantList = $ActiveRelationships | Group-Object -Property customerId | ForEach-Object {
+            Write-Host "Processing $($_.Name) to add to tenant list."
+            $ExistingTenantInfo = Get-CIPPAzDataTableEntity @TenantsTable -Filter "PartitionKey eq 'Tenants' and RowKey eq '$($_.Name)'"
+            if ($ExistingTenantInfo -and $ExistingTenantInfo.RequiresRefresh -eq $false) {
+                Write-Host 'Existing tenant found. We already have it cached, skipping.'
+                $ExistingTenantInfo
+                return
+            }
             $LatestRelationship = $_.Group | Sort-Object -Property relationshipEnd | Select-Object -Last 1
             $AutoExtend = ($_.Group | Where-Object { $_.autoExtend -eq $true } | Measure-Object).Count -gt 0
 
-            # Query domains to get default/initial
-            try {
-                $Domains = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/domains' -tenantid $LatestRelationship.customerId -NoAuthCheck:$true -ErrorAction Stop
-                $defaultDomainName = ($Domains | Where-Object { $_.isDefault -eq $true }).id
-                $initialDomainName = ($Domains | Where-Object { $_.isInitial -eq $true }).id
-            } catch {
-                $defaultDomainName = 'Domain Error, check permissions'
-                $initialDomainName = 'Domain Error, check permissions'
-            }
-            [PSCustomObject]@{
-                PartitionKey             = 'Tenants'
-                RowKey                   = $_.Name
-                customerId               = $_.Name
-                displayName              = $LatestRelationship.displayName
-                relationshipEnd          = $LatestRelationship.relationshipEnd
-                relationshipCount        = $_.Count
-                defaultDomainName        = $defaultDomainName
-                initialDomainName        = $initialDomainName
-                hasAutoExtend            = $AutoExtend
-                delegatedPrivilegeStatus = 'granularDelegatedAdminPrivileges'
-                domains                  = ''
-                Excluded                 = $false
-                ExcludeUser              = ''
-                ExcludeDate              = ''
-                GraphErrorCount          = 0
-                LastGraphError           = ''
-                LastRefresh              = (Get-Date).ToUniversalTime()
+            if (-not $SkipDomains.IsPresent) {
+                try {
+                    Write-Host "Getting domains for $($_.Name)."
+                    $Domains = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/domains' -tenantid $LatestRelationship.customerId -NoAuthCheck:$true -ErrorAction Stop
+                    $defaultDomainName = ($Domains | Where-Object { $_.isDefault -eq $true }).id
+                    $initialDomainName = ($Domains | Where-Object { $_.isInitial -eq $true }).id
+                } catch {
+                    try {
+                        #doing alternative method to temporarily get domains. Nightly refresh will fix this as it will be marked for renew.
+                        $Domain = (New-GraphGetRequest -uri "https://graph.microsoft.com/v1.0/tenantRelationships/findTenantInformationByTenantId(tenantId='$($LatestRelationship.customerId)')" -NoAuthCheck:$true).defaultDomainName
+                        $defaultDomainName = $Domain
+                        $initialDomainName = $Domain
+                        $RequiresRefresh = $true
+
+                    } catch {
+                        Write-LogMessage -API 'Get-Tenants' -message "Tried adding $($LatestRelationship.customerId) to tenant list but failed to get domains - $($_.Exception.Message)" -level 'Critical'
+                    }
+                }
+
+                [PSCustomObject]@{
+                    PartitionKey             = 'Tenants'
+                    RowKey                   = $_.Name
+                    customerId               = $_.Name
+                    displayName              = $LatestRelationship.displayName
+                    relationshipEnd          = $LatestRelationship.relationshipEnd
+                    relationshipCount        = $_.Count
+                    defaultDomainName        = $defaultDomainName
+                    initialDomainName        = $initialDomainName
+                    hasAutoExtend            = $AutoExtend
+                    delegatedPrivilegeStatus = 'granularDelegatedAdminPrivileges'
+                    domains                  = ''
+                    Excluded                 = $false
+                    ExcludeUser              = ''
+                    ExcludeDate              = ''
+                    GraphErrorCount          = 0
+                    LastGraphError           = ''
+                    RequiresRefresh          = [bool]$RequiresRefresh
+                    LastRefresh              = (Get-Date).ToUniversalTime()
+                }
             }
         }
-
         $IncludedTenantsCache = [system.collections.generic.list[object]]::new()
         if ($env:PartnerTenantAvailable) {
             # Add partner tenant if env is set
@@ -106,15 +135,17 @@ function Get-Tenants {
                 }) | Out-Null
         }
         foreach ($Tenant in $TenantList) {
-            if ($Tenant.defaultDomainName -eq 'Invalid' -or !$Tenant.defaultDomainName) { continue }
+            if ($Tenant.defaultDomainName -eq 'Invalid' -or !$Tenant.defaultDomainName) {
+                Write-LogMessage -API 'Get-Tenants' -message "We're skipping $($Tenant.displayName) as it has an invalid default domain name. Something is up with this instance." -level 'Critical'
+                continue 
+            }
             $IncludedTenantsCache.Add($Tenant) | Out-Null
         }
-
         if ($IncludedTenantsCache) {
-            $TenantsTable.Force = $true
-            Add-CIPPAzDataTableEntity @TenantsTable -Entity $IncludedTenantsCache
+            Add-CIPPAzDataTableEntity @TenantsTable -Entity $IncludedTenantsCache -Force | Out-Null
         }
     }
-    return ($IncludedTenantsCache | Where-Object -Property defaultDomainName -NE $null | Sort-Object -Property displayName)
 
+
+    return ($IncludedTenantsCache | Where-Object { $null -ne $_.defaultDomainName -and ($_.defaultDomainName -notmatch 'Domain Error' -or $IncludeAll.IsPresent) } | Sort-Object -Property displayName)
 }
