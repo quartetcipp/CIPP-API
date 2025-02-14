@@ -3,41 +3,39 @@ using namespace System.Net
 Function Invoke-ListUsers {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Identity.User.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
-    $selectlist = 'id', 'accountEnabled', 'displayName', 'userPrincipalName', 'username', 'userType', 'createdDateTime', 'companyName', 'country', 'department', 'businessPhones', 'city', 'faxNumber', 'givenName', 'isResourceAccount', 'jobTitle', 'mobilePhone', 'officeLocation', 'postalCode', 'preferredDataLocation', 'preferredLanguage', 'mail', 'mailNickname', 'proxyAddresses', 'Aliases', 'otherMails', 'showInAddressList', 'state', 'streetAddress', 'surname', 'usageLocation', 'LicJoined', 'assignedLicenses', 'onPremisesSyncEnabled', 'OnPremisesImmutableId', 'onPremisesDistinguishedName', 'onPremisesLastSyncDateTime', 'primDomain', 'Tenant', 'CippStatus'
     # Write to the Azure Functions log stream.
     Write-Host 'PowerShell HTTP trigger function processed a request.'
-    $ConvertTable = Import-Csv Conversiontable.csv | Sort-Object -Property 'guid' -Unique
+    $ConvertTable = Import-Csv ConversionTable.csv | Sort-Object -Property 'guid' -Unique
     # Interact with query parameters or the body of the request.
     $TenantFilter = $Request.Query.TenantFilter
     $GraphFilter = $Request.Query.graphFilter
     $userid = $Request.Query.UserID
 
     $GraphRequest = if ($TenantFilter -ne 'AllTenants') {
-        New-GraphGetRequest -uri "https://graph.microsoft.com/beta/users/$($userid)?`$top=999&`$select=$($selectlist -join ',')&`$filter=$GraphFilter&`$count=true" -tenantid $TenantFilter -ComplexFilter | Select-Object $selectlist | ForEach-Object {
-            $_.onPremisesSyncEnabled = [bool]($_.onPremisesSyncEnabled)
-            $_.UserName = $_.userPrincipalName -split '@' | Select-Object -First 1
-            $_.Aliases = $_.Proxyaddresses -join ', '
+        New-GraphGetRequest -uri "https://graph.microsoft.com/beta/users/$($userid)?`$top=999&`$filter=$GraphFilter&`$count=true" -tenantid $TenantFilter -ComplexFilter | ForEach-Object {
+            $_ | Add-Member -MemberType NoteProperty -Name 'onPremisesSyncEnabled' -Value ([bool]($_.onPremisesSyncEnabled)) -Force
+            $_ | Add-Member -MemberType NoteProperty -Name 'username' -Value ($_.userPrincipalName -split '@' | Select-Object -First 1) -Force
+            $_ | Add-Member -MemberType NoteProperty -Name 'Aliases' -Value ($_.ProxyAddresses -join ', ') -Force
             $SkuID = $_.AssignedLicenses.skuid
-            $_.LicJoined = ($ConvertTable | Where-Object { $_.guid -in $skuid }).'Product_Display_Name' -join ', '
-            $_.primDomain = ($_.userPrincipalName -split '@' | Select-Object -Last 1)
+            $_ | Add-Member -MemberType NoteProperty -Name 'LicJoined' -Value (($ConvertTable | Where-Object { $_.guid -in $skuid }).'Product_Display_Name' -join ', ') -Force
+            $_ | Add-Member -MemberType NoteProperty -Name 'primDomain' -Value @{value = ($_.userPrincipalName -split '@' | Select-Object -Last 1); label = ($_.userPrincipalName -split '@' | Select-Object -Last 1); } -Force
             $_
         }
     } else {
         $Table = Get-CIPPTable -TableName 'cacheusers'
         $Rows = Get-CIPPAzDataTableEntity @Table | Where-Object -Property Timestamp -GT (Get-Date).AddHours(-1)
         if (!$Rows) {
-            $Queue = New-CippQueueEntry -Name 'Users' -Link '/identity/administration/users?customerId=AllTenants'
-            Push-OutputBinding -Name listusers -Value "users/$($userid)?`$top=999&`$select=$($selectlist -join ',')&`$filter=$GraphFilter&`$count=true"
             [PSCustomObject]@{
-                Tenant  = 'Loading data for all tenants. Please check back after the job completes'
-                QueueId = $Queue.RowKey
+                Message = 'This function has been deprecated for all users, please use ListGraphRequest instead'
             }
         } else {
             $Rows.Data | ConvertFrom-Json | Select-Object $selectlist | ForEach-Object {
@@ -45,7 +43,7 @@ Function Invoke-ListUsers {
                 $_.Aliases = $_.Proxyaddresses -join ', '
                 $SkuID = $_.AssignedLicenses.skuid
                 $_.LicJoined = ($ConvertTable | Where-Object { $_.guid -in $skuid }).'Product_Display_Name' -join ', '
-                $_.primDomain = ($_.userPrincipalName -split '@' | Select-Object -Last 1)
+                $_.primDomain = @{value = ($_.userPrincipalName -split '@' | Select-Object -Last 1) }
                 $_
             }
         }
@@ -72,11 +70,11 @@ Function Invoke-ListUsers {
             Id              = $AuditlogsLogon.errorNumber
             Status          = $AuditlogsLogon.ResultStatus
         }
-        $GraphRequest = $GraphRequest | Select-Object *, 
+        $GraphRequest = $GraphRequest | Select-Object *,
         @{ Name = 'LastSigninApplication'; Expression = { $LastSignIn.AppDisplayName } },
         @{ Name = 'LastSigninDate'; Expression = { $($LastSignIn.CreatedDateTime | Out-String) } },
         @{ Name = 'LastSigninStatus'; Expression = { $AuditlogsLogon.operation } },
-        @{ Name = 'LastSigninResult'; Expression = { $LastSignIn.status } }, 
+        @{ Name = 'LastSigninResult'; Expression = { $LastSignIn.status } },
         @{ Name = 'LastSigninFailureReason'; Expression = { if ($LastSignIn.Id -eq 0) { 'Sucessfully signed in' } else { $LastSignIn.Id } } }
     }
     # Associate values to output bindings by calling 'Push-OutputBinding'.

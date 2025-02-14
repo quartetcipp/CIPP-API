@@ -3,7 +3,9 @@ using namespace System.Net
 Function Invoke-ExecEmailForward {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.Mailbox.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
@@ -12,53 +14,49 @@ Function Invoke-ExecEmailForward {
     $username = $request.body.userid
     $ForwardingAddress = $request.body.ForwardInternal.value
     $ForwardingSMTPAddress = $request.body.ForwardExternal
-    $DisableForwarding = $request.body.disableForwarding
-    $APIName = $TriggerMetadata.FunctionName
+    $ForwardOption = $request.body.forwardOption
+    $APIName = $Request.Params.CIPPEndpoint
+    [bool]$KeepCopy = if ($request.body.keepCopy -eq 'true') { $true } else { $false }
 
-    if ($ForwardingAddress) {
+    if ($ForwardOption -eq 'internalAddress') {
         try {
-            New-ExoRequest -tenantid $TenantFilter -cmdlet 'Set-mailbox' -cmdParams @{Identity = $Username; ForwardingAddress = $ForwardingAddress ; DeliverToMailboxAndForward = [bool]$request.body.keepCopy } -Anchor $username
+            Set-CIPPForwarding -userid $username -tenantFilter $TenantFilter -APIName $APINAME -Headers $Request.Headers -Forward $ForwardingAddress -keepCopy $KeepCopy
             if (-not $request.body.KeepCopy) {
-                Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Set Forwarding for $($username) to $($ForwardingAddress) and not keeping a copy" -Sev 'Info' -tenant $TenantFilter
                 $results = "Forwarding all email for $($username) to $($ForwardingAddress) and not keeping a copy"
-            } elseif ($request.body.KeepCopy) {
-                Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Set Forwarding for $($username) to $($ForwardingAddress) and keeping a copy" -Sev 'Info' -tenant $TenantFilter
-                $results = "Forwarding all email for $($username) to $($ForwardingAddress) and keeping a copy"  
+            } else {
+                $results = "Forwarding all email for $($username) to $($ForwardingAddress) and keeping a copy"
             }
         } catch {
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Could not add forwarding for $($username)" -Sev 'Error' -tenant $TenantFilter
+            Write-LogMessage -headers $Request.Headers -API $APINAME -message "Could not add forwarding for $($username)" -Sev 'Error' -tenant $TenantFilter
             $results = "Could not add forwarding for $($username). Error: $($_.Exception.Message)"
-        
+
         }
     }
 
-    elseif ($ForwardingSMTPAddress) {
+    if ($ForwardOption -eq 'ExternalAddress') {
         try {
-            New-ExoRequest -tenantid $TenantFilter -cmdlet 'Set-mailbox' -cmdParams @{Identity = $Username; ForwardingSMTPAddress = $ForwardingSMTPAddress ; DeliverToMailboxAndForward = [bool]$request.body.keepCopy } -Anchor $username
+            Set-CIPPForwarding -userid $username -tenantFilter $TenantFilter -APIName $APINAME -Headers $Request.Headers -forwardingSMTPAddress $ForwardingSMTPAddress -keepCopy $KeepCopy
             if (-not $request.body.KeepCopy) {
-                Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Set forwarding for $($username) to $($ForwardingSMTPAddress) and not keeping a copy" -Sev 'Info' -tenant $TenantFilter
                 $results = "Forwarding all email for $($username) to $($ForwardingSMTPAddress) and not keeping a copy"
-            } elseif ($request.body.KeepCopy) {
-                Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Set forwarding for $($username) to $($ForwardingSMTPAddress) and keeping a copy" -Sev 'Info' -tenant $TenantFilter
-                $results = "Forwarding all email for $($username) to $($ForwardingSMTPAddress) and keeping a copy"  
+            } else {
+                $results = "Forwarding all email for $($username) to $($ForwardingSMTPAddress) and keeping a copy"
             }
         } catch {
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Could not add forwarding for $($username)" -Sev 'Error' -tenant $TenantFilter
+            Write-LogMessage -headers $Request.Headers -API $APINAME -message "Could not add forwarding for $($username)" -Sev 'Error' -tenant $TenantFilter
             $results = "Could not add forwarding for $($username). Error: $($_.Exception.Message)"
-        
+
         }
 
     }
 
-    elseif ($DisableForwarding -eq 'True') {
+    if ($ForwardOption -eq 'disabled') {
         try {
-            New-ExoRequest -tenantid $TenantFilter -cmdlet 'Set-Mailbox' -cmdParams @{Identity = $Username; ForwardingAddress = $null; ForwardingSMTPAddress = $null; DeliverToMailboxAndForward = $false }
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Disabled Email forwarding for $($username)" -Sev 'Info' -tenant $TenantFilter
+            Set-CIPPForwarding -userid $username -username $username -tenantFilter $Tenantfilter -Headers $Request.Headers -APIName $APIName -Disable $true
             $results = "Disabled Email Forwarding for $($username)"
         } catch {
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Could not disable Email forwarding for $($username)" -Sev 'Error' -tenant $TenantFilter
+            Write-LogMessage -headers $Request.Headers -API $APINAME -message "Could not disable Email forwarding for $($username)" -Sev 'Error' -tenant $TenantFilter
             $results = "Could not disable Email forwarding for $($username). Error: $($_.Exception.Message)"
-    
+
         }
     }
 

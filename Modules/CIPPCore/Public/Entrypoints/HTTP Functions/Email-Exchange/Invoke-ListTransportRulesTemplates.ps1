@@ -3,17 +3,19 @@ using namespace System.Net
 Function Invoke-ListTransportRulesTemplates {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.TransportRule.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
     $Table = Get-CippTable -tablename 'templates'
 
     $Templates = Get-ChildItem 'Config\*.TransportRuleTemplate.json' | ForEach-Object {
-    
+
         $Entity = @{
             JSON         = "$(Get-Content $_)"
             RowKey       = "$($_.name)"
@@ -26,12 +28,12 @@ Function Invoke-ListTransportRulesTemplates {
 
     #List new policies
     $Table = Get-CippTable -tablename 'templates'
-    $Filter = "PartitionKey eq 'TransportTemplate'" 
+    $Filter = "PartitionKey eq 'TransportTemplate'"
     $Templates = (Get-CIPPAzDataTableEntity @Table -Filter $Filter) | ForEach-Object {
         $GUID = $_.RowKey
-        $data = $_.JSON | ConvertFrom-Json 
+        $data = $_.JSON | ConvertFrom-Json
         $data | Add-Member -NotePropertyName 'GUID' -NotePropertyValue $GUID
-        $data 
+        $data
     }
 
     if ($Request.query.ID) { $Templates = $Templates | Where-Object -Property RowKey -EQ $Request.query.id }

@@ -3,13 +3,15 @@ using namespace System.Net
 Function Invoke-ListTeams {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Teams.Group.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
 
     # Write to the Azure Functions log stream.
@@ -37,7 +39,7 @@ Function Invoke-ListTeams {
             Members       = @($Members)
             Owners        = @($owners)
             InstalledApps = @($AppsList)
-        } 
+        }
     }
 
 

@@ -3,22 +3,37 @@ using namespace System.Net
 Function Invoke-ExecDeviceAction {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Endpoint.MEM.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
-    # Interact with query parameters or the body of the request.
+    # Interact with Body parameters or the body of the request.
 
 
-    try {   
-        if ($Request.Query.Action -eq 'setDeviceName') {
+    try {
+        if ($Request.Body.Action -eq 'setDeviceName') {
             $ActionBody = @{ deviceName = $Request.Body.input } | ConvertTo-Json -Compress
-        }  
-        $ActionResult = New-CIPPDeviceAction -Action $Request.Query.Action -ActionBody $ActionBody -DeviceFilter $Request.Query.GUID -TenantFilter $Request.Query.TenantFilter -ExecutingUser $request.headers.'x-ms-client-principal' -APINAME $APINAME
+        }
+        else {
+            $ActionBody = $Request.Body | ConvertTo-Json -Compress
+        }
+
+        $cmdparams = @{
+            Action = $Request.Body.Action
+            ActionBody = $ActionBody
+            DeviceFilter = $Request.Body.GUID
+            TenantFilter = $Request.Body.TenantFilter
+            Headers = $Request.Headers
+            APINAME = $APINAME
+        }
+        $ActionResult = New-CIPPDeviceAction @cmdparams
+
         $body = [pscustomobject]@{'Results' = "$ActionResult" }
 
     } catch {

@@ -3,34 +3,42 @@ using namespace System.Net
 Function Invoke-RemovePolicy {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Endpoint.MEM.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    $Headers = $Request.Headers
+    Write-LogMessage -headers $Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
     # Interact with query parameters or the body of the request.
-    $TenantFilter = $Request.Query.TenantFilter
-    $policyId = $Request.Query.ID
-    if (!$policyId) { exit }
+    $TenantFilter = $Request.Query.tenantFilter ?? $Request.body.tenantFilter
+    $PolicyId = $Request.Query.ID ?? $Request.body.ID
+    $UrlName = $Request.Query.URLName ?? $Request.body.URLName
+
+    if (!$PolicyId) { exit }
     try {
 
-        #$unAssignRequest = New-GraphPostRequest -uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies('$($policyId)')/assign" -type POST -Body '{"assignments":[]}' -tenant $TenantFilter
-        $GraphRequest = New-GraphPostRequest -uri "https://graph.microsoft.com/beta/deviceManagement/$($Request.Query.URLName)('$($policyId)')" -type DELETE -tenant $TenantFilter
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Deleted $policyId" -Sev 'Info' -tenant $TenantFilter
-        $body = [pscustomobject]@{'Results' = 'Successfully deleted the policy' }
+        #$unAssignRequest = New-GraphPostRequest -uri "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies('$($PolicyId)')/assign" -type POST -Body '{"assignments":[]}' -tenant $TenantFilter
+        $null = New-GraphPostRequest -uri "https://graph.microsoft.com/beta/deviceManagement/$($UrlName)('$($PolicyId)')" -type DELETE -tenant $TenantFilter
+        $Results = "Successfully deleted the policy with ID: $($PolicyId)"
+        Write-LogMessage -headers $Headers -API $APINAME -message $Results -Sev Info -tenant $TenantFilter
+        $StatusCode = [HttpStatusCode]::OK
 
     } catch {
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Could not delete policy $policyId. $($_.Exception.Message)" -Sev 'Error' -tenant $TenantFilter
-        $body = [pscustomobject]@{'Results' = "Could not delete policy: $($_.Exception.Message)" }
-
+        $ErrorMessage = Get-CippException -Exception $_
+        $Results = "Could not delete policy: $($ErrorMessage.NormalizedError)"
+        Write-LogMessage -headers $Headers -API $APINAME -message $Results -Sev Error -tenant $TenantFilter -LogData $ErrorMessage
+        $StatusCode = [HttpStatusCode]::Forbidden
     }
 
+    $body = [pscustomobject]@{'Results' = "$Results" }
     # Associate values to output bindings by calling 'Push-OutputBinding'.
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = [HttpStatusCode]::OK
+            StatusCode = $StatusCode
             Body       = $body
         })
 

@@ -3,7 +3,9 @@ using namespace System.Net
 Function Invoke-ListGenericAllTenants {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        CIPP.Core.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
@@ -13,7 +15,7 @@ Function Invoke-ListGenericAllTenants {
     Update-CippQueueEntry -RowKey $QueueKey -Status 'Started'
     $Table = Get-CIPPTable -TableName "cache$TableURLName"
     $fullUrl = "https://graph.microsoft.com/beta/$QueueItem"
-    Get-CIPPAzDataTableEntity @Table | Remove-AzDataTableEntity @table
+    Get-CIPPAzDataTableEntity @Table | Remove-AzDataTableEntity -Force @table
 
     $RawGraphRequest = Get-Tenants | ForEach-Object -Parallel {
         $domainName = $_.defaultDomainName

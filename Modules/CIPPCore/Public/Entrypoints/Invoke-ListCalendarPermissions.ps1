@@ -3,21 +3,23 @@ using namespace System.Net
 Function Invoke-ListCalendarPermissions {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.Mailbox.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
     $UserID = $request.Query.UserID
     $Tenantfilter = $request.Query.tenantfilter
 
     try {
         $GetCalParam = @{Identity = $UserID; FolderScope = 'Calendar' }
-        $CalendarFolder = New-ExoRequest -tenantid $Tenantfilter -cmdlet 'Get-MailboxFolderStatistics' -cmdParams $GetCalParam | Select-Object -First 1
+        $CalendarFolder = New-ExoRequest -tenantid $Tenantfilter -cmdlet 'Get-MailboxFolderStatistics' -anchor $UserID -cmdParams $GetCalParam | Select-Object -First 1
         $CalParam = @{Identity = "$($UserID):\$($CalendarFolder.name)" }
-        $GraphRequest = New-ExoRequest -tenantid $Tenantfilter -cmdlet 'Get-MailboxFolderPermission' -cmdParams $CalParam -UseSystemMailbox $true | Select-Object Identity, User, AccessRights, FolderName
+        $GraphRequest = New-ExoRequest -tenantid $Tenantfilter -cmdlet 'Get-MailboxFolderPermission' -anchor $UserID -cmdParams $CalParam -UseSystemMailbox $true | Select-Object Identity, User, AccessRights, FolderName
         Write-LogMessage -API 'List Calendar Permissions' -tenant $tenantfilter -message "Calendar permissions listed for $($tenantfilter)" -sev Debug
         $StatusCode = [HttpStatusCode]::OK
     } catch {

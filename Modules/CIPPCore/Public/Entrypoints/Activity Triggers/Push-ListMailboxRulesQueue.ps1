@@ -1,5 +1,8 @@
 function Push-ListMailboxRulesQueue {
-    # Input bindings are passed in via param block.
+    <#
+    .FUNCTIONALITY
+        Entrypoint
+    #>
     param($Item)
 
     # Write out the queue message and metadata to the information log.
@@ -10,16 +13,16 @@ function Push-ListMailboxRulesQueue {
     $Table = Get-CIPPTable -TableName cachembxrules
     try {
         $Rules = New-ExoRequest -tenantid $domainName -cmdlet 'Get-Mailbox' -Select 'userPrincipalName,GUID' | ForEach-Object -Parallel {
-            Import-Module CippCore
-            $MbxRules = New-ExoRequest -Anchor $_.UserPrincipalName -tenantid $using:domainName -cmdlet 'Get-InboxRule' -cmdParams @{Mailbox = $_.GUID }
+            Import-Module CIPPCore
+            $MbxRules = New-ExoRequest -Anchor $_.UserPrincipalName -tenantid $using:domainName -cmdlet 'Get-InboxRule' -cmdParams @{Mailbox = $_.GUID; IncludeHidden = $true } | Where-Object { $_.Name -ne 'Junk E-Mail Rule' -and $_.Name -notlike 'Microsoft.Exchange.OOF.*' }
             foreach ($Rule in $MbxRules) {
                 $Rule | Add-Member -NotePropertyName 'UserPrincipalName' -NotePropertyValue $_.userPrincipalName
                 $Rule
             }
         }
         if (($Rules | Measure-Object).Count -gt 0) {
-            foreach ($Rule in $Rules) {
-                $GraphRequest = [PSCustomObject]@{
+            $GraphRequest = foreach ($Rule in $Rules) {
+                [PSCustomObject]@{
                     Rules        = [string]($Rule | ConvertTo-Json)
                     RowKey       = [string](New-Guid).guid
                     Tenant       = [string]$domainName
@@ -28,9 +31,9 @@ function Push-ListMailboxRulesQueue {
 
             }
         } else {
-            $Rules = @{
-                Name = 'No rules found'
-            } | ConvertTo-Json
+            $Rules = @(@{
+                    Name = 'No rules found'
+                }) | ConvertTo-Json
             $GraphRequest = [PSCustomObject]@{
                 Rules        = [string]$Rules
                 RowKey       = [string]$domainName

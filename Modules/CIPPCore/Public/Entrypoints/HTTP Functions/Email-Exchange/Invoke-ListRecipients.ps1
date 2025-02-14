@@ -3,13 +3,15 @@ using namespace System.Net
 Function Invoke-ListRecipients {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.Mailbox.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
 
     # Write to the Azure Functions log stream.
@@ -26,9 +28,9 @@ Function Invoke-ListRecipients {
             Select    = $select
         }
 
-        $GraphRequest = (New-ExoRequest @ExoRequest) | Select-Object id, ExchangeGuid, ArchiveGuid, 
-        @{ Name = 'UPN'; Expression = { $_.'PrimarySmtpAddress' } }, 
-        @{ Name = 'mail'; Expression = { $_.'PrimarySmtpAddress' } }, 
+        $GraphRequest = (New-ExoRequest @ExoRequest) | Select-Object id, ExchangeGuid, ArchiveGuid,
+        @{ Name = 'UPN'; Expression = { $_.'PrimarySmtpAddress' } },
+        @{ Name = 'mail'; Expression = { $_.'PrimarySmtpAddress' } },
         @{ Name = 'displayName'; Expression = { $_.'DisplayName' } }
         $StatusCode = [HttpStatusCode]::OK
     } catch {

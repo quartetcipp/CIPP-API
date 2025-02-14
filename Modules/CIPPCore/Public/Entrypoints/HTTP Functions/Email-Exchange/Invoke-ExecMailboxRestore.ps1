@@ -1,12 +1,14 @@
 function Invoke-ExecMailboxRestore {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.Mailbox.ReadWrite
     #>
     Param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
     try {
         switch ($Request.Query.Action) {
@@ -43,8 +45,8 @@ function Invoke-ExecMailboxRestore {
             default {
                 $TenantFilter = $Request.Body.TenantFilter
                 $RequestName = $Request.Body.RequestName
-                $SourceMailbox = $Request.Body.SourceMailbox
-                $TargetMailbox = $Request.Body.TargetMailbox
+                $SourceMailbox = $Request.Body.SourceMailbox.value ?? $Request.Body.SourceMailbox
+                $TargetMailbox = $Request.Body.TargetMailbox.value ?? $Request.Body.TargetMailbox
 
                 $ExoRequest = @{
                     tenantid  = $TenantFilter
@@ -56,8 +58,32 @@ function Invoke-ExecMailboxRestore {
                         AllowLegacyDNMismatch = $true
                     }
                 }
-                if ([bool]$Request.Body.AcceptLargeDataLoss -eq $true) {
-                    $ExoRequest.cmdParams.AcceptLargeDataLoss = $true
+                if ($Request.Body.AssociatedMessagesCopyOption) {
+                    $ExoRequest.cmdParams.AssociatedMessagesCopyOption = $Request.Body.AssociatedMessagesCopyOption.value
+                }
+                if ($Request.Body.ExcludeFolders) {
+                    $ExoRequest.cmdParams.ExcludeFolders = $Request.Body.ExcludeFolders.value
+                }
+                if ($Request.Body.IncludeFolders) {
+                    $ExoRequest.cmdParams.IncludeFolders = $Request.Body.IncludeFolders.value
+                }
+                if ($Request.Body.BatchName) {
+                    $ExoRequest.cmdParams.BatchName = $Request.Body.BatchName
+                }
+                if ($Request.Body.CompletedRequestAgeLimit) {
+                    $ExoRequest.cmdParams.CompletedRequestAgeLimit = $Request.Body.CompletedRequestAgeLimit
+                }
+                if ($Request.Body.ConflictResolutionOption) {
+                    $ExoRequest.cmdParams.ConflictResolutionOption = $Request.Body.ConflictResolutionOption.value
+                }
+                if ($Request.Body.SourceRootFolder) {
+                    $ExoRequest.cmdParams.SourceRootFolder = $Request.Body.SourceRootFolder
+                }
+                if ($Request.Body.TargetRootFolder) {
+                    $ExoRequest.cmdParams.TargetRootFolder = $Request.Body.TargetRootFolder
+                }
+                if ($Request.Body.TargetType) {
+                    $ExoRequest.cmdParams.TargetType = $Request.Body.TargetType.value
                 }
                 if ([int]$Request.Body.BadItemLimit -gt 0) {
                     $ExoRequest.cmdParams.BadItemLimit = $Request.Body.BadItemLimit
@@ -65,7 +91,17 @@ function Invoke-ExecMailboxRestore {
                 if ([int]$Request.Body.LargeItemLimit -gt 0) {
                     $ExoRequest.cmdParams.LargeItemLimit = $Request.Body.LargeItemLimit
                 }
+                if ($Request.Body.ExcludeDumpster) {
+                    $ExoRequest.cmdParams.ExcludeDumpster = $Request.Body.ExcludeDumpster
+                }
+                if ($Request.Body.SourceIsArchive) {
+                    $ExoRequest.cmdParams.SourceIsArchive = $Request.Body.SourceIsArchive
+                }
+                if ($Request.Body.TargetIsArchive) {
+                    $ExoRequest.cmdParams.TargetIsArchive = $Request.Body.TargetIsArchive
+                }
 
+                Write-Information ($ExoRequest | ConvertTo-Json)
                 $SuccessMessage = 'Mailbox restore request created successfully'
             }
         }

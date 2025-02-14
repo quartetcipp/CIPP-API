@@ -3,35 +3,40 @@ using namespace System.Net
 Function Invoke-EditExConnector {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.Connector.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-    $Tenantfilter = $request.Query.tenantfilter
-
-
-    $Params = @{
-        Identity = $request.query.guid
-    }
-
+    $APIName = $Request.Params.CIPPEndpoint
+    $Headers = $Request.Headers
+    Write-LogMessage -Headers $Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $TenantFilter = $Request.Query.tenantFilter ?? $Request.Body.tenantFilter
     try {
-        $state = if ($request.query.state -eq 'enable') { $true } else { $false }
-        $Params = @{ Identity = $request.query.GUID; Enabled = $state }
-        $GraphRequest = New-ExoRequest -tenantid $Tenantfilter -cmdlet "Set-$($Request.query.Type)Connector" -cmdParams $params -UseSystemMailbox $true
-        $Result = "Set Connector $($Request.query.guid) to $($request.query.State)"
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -tenant $tenantfilter -message "Set Connector $($Request.query.guid) to $($request.query.State)" -sev 'Info'
+        $ConnectorState = $Request.Query.State ?? $Request.Body.State
+        $State = if ($ConnectorState -eq 'Enable') { $true } else { $false }
+        $Guid = $Request.Query.GUID ?? $Request.Body.GUID
+        $Type = $Request.Query.Type ?? $Request.Body.Type
+        $Params = @{
+            Identity = $Guid
+            Enabled  = $State
+        }
+        $null = New-ExoRequest -tenantid $TenantFilter -cmdlet "Set-$($Type)Connector" -cmdParams $params -UseSystemMailbox $true
+        $Result = "Set Connector $($Guid) to $($ConnectorState)"
+        Write-LogMessage -Headers $Headers -API $APINAME -tenant $TenantFilter -message "Set Connector $($Guid) to $($ConnectorState)" -sev Info
+        $StatusCode = [HttpStatusCode]::OK
+    } catch {
+        $ErrorMessage = Get-CIPPException -Exception $_
+        Write-LogMessage -Headers $Headers -API $APINAME -tenant $TenantFilter -message "Failed setting Connector $($Guid) to $($ConnectorState). Error:$($ErrorMessage.NormalizedError)" -Sev Error -LogData $ErrorMessage
+        $Result = $ErrorMessage.NormalizedError
+        $StatusCode = [HttpStatusCode]::Forbidden
     }
-    catch {
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -tenant $tenantfilter -message "Failed setting Connector $($Request.query.guid) to $($request.query.State). Error:$($_.Exception.Message)" -Sev 'Error'
-        $ErrorMessage = Get-NormalizedError -Message $_.Exception
-        $Result = $ErrorMessage
-    }
+
     # Associate values to output bindings by calling 'Push-OutputBinding'.
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-            StatusCode = [HttpStatusCode]::OK
+            StatusCode = $StatusCode
             Body       = @{Results = $Result }
         })
 

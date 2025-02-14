@@ -3,26 +3,30 @@ using namespace System.Net
 Function Invoke-RemoveCATemplate {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Tenant.ConditionalAccess.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
+    $APIName = $Request.Params.CIPPEndpoint
+    $User = $Request.Headers
     $ID = $request.query.id
+    Write-LogMessage -Headers $User -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+
     try {
         $Table = Get-CippTable -tablename 'templates'
 
         $Filter = "PartitionKey eq 'CATemplate' and RowKey eq '$id'"
         $ClearRow = Get-CIPPAzDataTableEntity @Table -Filter $Filter -Property PartitionKey, RowKey
-        Remove-AzDataTableEntity @Table -Entity $clearRow
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Removed Conditional Access Template with ID $ID." -Sev 'Info'
+        Remove-AzDataTableEntity -Force @Table -Entity $clearRow
+        Write-LogMessage -Headers $User -API $APINAME -message "Removed Conditional Access Template with ID $ID." -Sev 'Info'
         $body = [pscustomobject]@{'Results' = 'Successfully removed Conditional Access Template' }
     } catch {
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Failed to remove Conditional Access template $ID. $($_.Exception.Message)" -Sev 'Error'
-        $body = [pscustomobject]@{'Results' = "Failed to remove template: $($_.Exception.Message)" }
+        $ErrorMessage = Get-CippException -Exception $_
+        Write-LogMessage -Headers $User -API $APINAME -message "Failed to remove Conditional Access template $ID. $($ErrorMessage.NormalizedError)" -Sev 'Error'
+        $body = [pscustomobject]@{'Results' = "Failed to remove template: $($ErrorMessage.NormalizedError)" }
     }
 
 

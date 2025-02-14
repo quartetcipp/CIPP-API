@@ -3,14 +3,16 @@ using namespace System.Net
 function Invoke-ListAppConsentRequests {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Tenant.Administration.Read
     #>
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
+    $APIName = $Request.Params.CIPPEndpoint
     $TenantFilter = $Request.Query.TenantFilter
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-    
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+
     try {
         if ($Request.Query.TenantFilter -eq 'AllTenants') {
             throw 'AllTenants is not yet supported'
@@ -48,7 +50,7 @@ function Invoke-ListAppConsentRequests {
         $StatusCode = [HttpStatusCode]::OK
     } catch {
         $StatusCode = [HttpStatusCode]::OK
-        Write-LogMessage -user $ExecutingUser -API $APIName -message 'app consent request list failed' -Sev 'Error' -tenant $TenantFilter
+        Write-LogMessage -Headers $Headers -API $APIName -message 'app consent request list failed' -Sev 'Error' -tenant $TenantFilter
         $Results = @{ appDisplayName = "Error: $($_.Exception.Message)" }
     }
 

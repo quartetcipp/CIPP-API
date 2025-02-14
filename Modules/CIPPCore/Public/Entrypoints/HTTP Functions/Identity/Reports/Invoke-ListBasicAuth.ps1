@@ -3,15 +3,17 @@ using namespace System.Net
 Function Invoke-ListBasicAuth {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Identity.AuditLog.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-        
+
     # Write to the Azure Functions log stream.
     Write-Host 'PowerShell HTTP trigger function processed a request.'
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
     # Interact with query parameters or the body of the request.
     $TenantFilter = $Request.Query.TenantFilter
     $currentTime = Get-Date -Format 'yyyy-MM-ddTHH:MM:ss'
@@ -24,15 +26,15 @@ Function Invoke-ListBasicAuth {
         try {
             $GraphRequest = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/auditLogs/signIns?api-version=beta&filter=$($filters)" -tenantid $TenantFilter -erroraction stop | Select-Object userPrincipalName, clientAppUsed, Status | Sort-Object -Unique -Property userPrincipalName
             $response = $GraphRequest
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Retrieved basic authentication report' -Sev 'Debug' -tenant $TenantFilter
-    
+            Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Retrieved basic authentication report' -Sev 'Debug' -tenant $TenantFilter
+
             # Associate values to output bindings by calling 'Push-OutputBinding'.
             Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
                     StatusCode = [HttpStatusCode]::OK
                     Body       = @($response)
                 })
         } catch {
-            Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message "Failed to retrieve basic authentication report: $($_.Exception.message) " -Sev 'Error' -tenant $TenantFilter
+            Write-LogMessage -headers $Request.Headers -API $APINAME -message "Failed to retrieve basic authentication report: $($_.Exception.message) " -Sev 'Error' -tenant $TenantFilter
             # Associate values to output bindings by calling 'Push-OutputBinding'.
             Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
                     StatusCode = '500'
@@ -43,7 +45,22 @@ Function Invoke-ListBasicAuth {
         $Table = Get-CIPPTable -TableName cachebasicauth
         $Rows = Get-CIPPAzDataTableEntity @Table | Where-Object -Property Timestamp -GT (Get-Date).AddHours(-1)
         if (!$Rows) {
-            Push-OutputBinding -Name Msg -Value (Get-Date).ToString()
+            $TenantList = Get-Tenants -IncludeErrors
+            $Queue = New-CippQueueEntry -Name 'Basic Auth - All Tenants' -TotalTasks ($TenantList | Measure-Object).Count
+            $InputObject = [PSCustomObject]@{
+                OrchestratorName = 'BasicAuthOrchestrator'
+                QueueFunction    = @{
+                    FunctionName    = 'GetTenants'
+                    TenantParams    = @{
+                        IncludeErrors = $true
+                    }
+                    QueueId         = $Queue.RowKey
+                    DurableFunction = 'ListBasicAuthAllTenants'
+                }
+                SkipLog          = $true
+            }
+            Start-NewOrchestration -FunctionName 'CIPPOrchestrator' -InputObject ($InputObject | ConvertTo-Json -Depth 5 -Compress)
+
             $GraphRequest = [PSCustomObject]@{
                 Tenant = 'Loading data for all tenants. Please check back in 10 minutes'
             }

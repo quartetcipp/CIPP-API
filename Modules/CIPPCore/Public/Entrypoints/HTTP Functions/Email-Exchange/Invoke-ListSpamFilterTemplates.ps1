@@ -3,23 +3,25 @@ using namespace System.Net
 Function Invoke-ListSpamFilterTemplates {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.SpamFilter.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
     $Table = Get-CippTable -tablename 'templates'
 
     #List new policies
     $Table = Get-CippTable -tablename 'templates'
-    $Filter = "PartitionKey eq 'SpamfilterTemplate'" 
+    $Filter = "PartitionKey eq 'SpamfilterTemplate'"
     $Templates = (Get-CIPPAzDataTableEntity @Table -Filter $Filter) | ForEach-Object {
         $GUID = $_.RowKey
-        $data = $_.JSON | ConvertFrom-Json 
+        $data = $_.JSON | ConvertFrom-Json
         $data | Add-Member -NotePropertyName 'GUID' -NotePropertyValue $GUID
-        $data 
+        $data
     }
 
     if ($Request.query.ID) { $Templates = $Templates | Where-Object -Property RowKey -EQ $Request.query.id }

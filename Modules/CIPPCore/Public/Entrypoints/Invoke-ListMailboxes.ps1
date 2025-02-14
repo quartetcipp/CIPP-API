@@ -3,13 +3,15 @@ using namespace System.Net
 Function Invoke-ListMailboxes {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.Mailbox.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
 
     # Write to the Azure Functions log stream.
@@ -18,12 +20,12 @@ Function Invoke-ListMailboxes {
     # Interact with query parameters or the body of the request.
     $TenantFilter = $Request.Query.TenantFilter
     try {
-        $Select = 'id,ExchangeGuid,ArchiveGuid,UserPrincipalName,DisplayName,PrimarySMTPAddress,RecipientType,RecipientTypeDetails,EmailAddresses'
+        $Select = 'id,ExchangeGuid,ArchiveGuid,UserPrincipalName,DisplayName,PrimarySMTPAddress,RecipientType,RecipientTypeDetails,EmailAddresses,WhenSoftDeleted,IsInactiveMailbox,ForwardingSmtpAddress,DeliverToMailboxAndForward,ForwardingAddress,HiddenFromAddressListsEnabled,ExternalDirectoryObjectId,MessageCopyForSendOnBehalfEnabled,MessageCopyForSentAsEnabled'
         $ExoRequest = @{
             tenantid  = $TenantFilter
             cmdlet    = 'Get-Mailbox'
-            cmdParams = @{resultsize = 'unlimited' }
-            Select    = $select
+            cmdParams = @{}
+            Select    = $Select
         }
 
         $AllowedParameters = @(
@@ -36,7 +38,7 @@ Function Invoke-ListMailboxes {
             @{Parameter = 'SoftDeletedMailbox'; Type = 'Bool' }
         )
 
-        foreach ($Param in $Request.Query.Keys) {
+        foreach ($Param in $Request.Query.PSObject.Properties.Name) {
             $CmdParam = $AllowedParameters | Where-Object { $_.Parameter -eq $Param }
             if ($CmdParam) {
                 switch ($CmdParam.Type) {
@@ -46,7 +48,9 @@ Function Invoke-ListMailboxes {
                         }
                     }
                     'Bool' {
-                        if ([bool]$Request.Query.$Param -eq $true) {
+                        $ParamIsTrue = $false
+                        [bool]::TryParse($Request.Query.$Param, [ref]$ParamIsTrue) | Out-Null
+                        if ($ParamIsTrue -eq $true) {
                             $ExoRequest.cmdParams.$Param = $true
                         }
                     }
@@ -54,14 +58,20 @@ Function Invoke-ListMailboxes {
             }
         }
 
-        Write-Host ($ExoRequest | ConvertTo-Json)
-        $GraphRequest = (New-ExoRequest @ExoRequest) | Select-Object id, ExchangeGuid, ArchiveGuid, @{ Name = 'UPN'; Expression = { $_.'UserPrincipalName' } },
+        $GraphRequest = (New-ExoRequest @ExoRequest) | Select-Object id, ExchangeGuid, ArchiveGuid, WhenSoftDeleted, @{ Name = 'UPN'; Expression = { $_.'UserPrincipalName' } },
 
         @{ Name = 'displayName'; Expression = { $_.'DisplayName' } },
         @{ Name = 'primarySmtpAddress'; Expression = { $_.'PrimarySMTPAddress' } },
         @{ Name = 'recipientType'; Expression = { $_.'RecipientType' } },
         @{ Name = 'recipientTypeDetails'; Expression = { $_.'RecipientTypeDetails' } },
-        @{ Name = 'AdditionalEmailAddresses'; Expression = { ($_.'EmailAddresses' | Where-Object { $_ -clike 'smtp:*' }).Replace('smtp:', '') -join ', ' } }
+        @{ Name = 'AdditionalEmailAddresses'; Expression = { ($_.'EmailAddresses' | Where-Object { $_ -clike 'smtp:*' }).Replace('smtp:', '') -join ', ' } },
+        @{Name = 'ForwardingSmtpAddress'; Expression = { $_.'ForwardingSmtpAddress' -replace 'smtp:', '' } },
+        @{Name = 'InternalForwardingAddress'; Expression = { $_.'ForwardingAddress' } },
+        DeliverToMailboxAndForward,
+        HiddenFromAddressListsEnabled,
+        ExternalDirectoryObjectId,
+        MessageCopyForSendOnBehalfEnabled,
+        MessageCopyForSentAsEnabled
         $StatusCode = [HttpStatusCode]::OK
     } catch {
         $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message

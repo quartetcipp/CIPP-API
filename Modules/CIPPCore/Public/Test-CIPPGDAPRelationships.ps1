@@ -3,10 +3,11 @@ function Test-CIPPGDAPRelationships {
     param (
         $TenantFilter,
         $APIName = 'Access Check',
-        $ExecutingUser
+        $Headers
     )
 
-    $GDAPissues = [System.Collections.ArrayList]@()
+    $GDAPissues = [System.Collections.Generic.List[object]]@()
+    $MissingGroups = [System.Collections.Generic.List[object]]@()
     try {
         #Get graph request to list all relationships.
         $Relationships = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships?`$filter=status eq 'active'" -tenantid $ENV:TenantID -NoAuthCheck $true
@@ -17,8 +18,8 @@ function Test-CIPPGDAPRelationships {
                 $GDAPissues.add([PSCustomObject]@{
                         Type         = 'Error'
                         Issue        = 'This tenant only has a MLT(Microsoft Led Transition) relationship. This is a read-only relationship. You must migrate this tenant to GDAP.'
-                        Tenant       = $Tenant.Group.customer.displayName
-                        Relationship = $Tenant.Group.displayName
+                        Tenant       = [string]$Tenant.Group.customer.displayName
+                        Relationship = [string]$Tenant.Group.displayName
                         Link         = 'https://docs.cipp.app/setup/gdap/index'
                     }) | Out-Null
             }
@@ -27,8 +28,8 @@ function Test-CIPPGDAPRelationships {
                     $GDAPissues.add([PSCustomObject]@{
                             Type         = 'Warning'
                             Issue        = 'The relationship has global administrator access. Auto-Extend is not available.'
-                            Tenant       = $Group.customer.displayName | Out-String
-                            Relationship = $Group.displayName | Out-String
+                            Tenant       = [string]$Group.customer.displayName
+                            Relationship = [string]$Group.displayName
                             Link         = 'https://docs.cipp.app/setup/gdap/troubleshooting#autoextend'
 
                         }) | Out-Null
@@ -75,6 +76,10 @@ function Test-CIPPGDAPRelationships {
                         Link         = 'https://docs.cipp.app/setup/gdap/troubleshooting#groups'
 
                     }) | Out-Null
+                $MissingGroups.Add([PSCustomObject]@{
+                        Name = $Group
+                        Type = 'SAM User Membership'
+                    }) | Out-Null
             }
             if ($CIPPGroupCount -lt 12) {
                 $GDAPissues.add([PSCustomObject]@{
@@ -89,13 +94,32 @@ function Test-CIPPGDAPRelationships {
         }
 
     } catch {
-        Write-LogMessage -user $ExecutingUser -API $APINAME -message "Failed to run GDAP check for $($TenantFilter): $($_.Exception.Message)" -Sev 'Error'
+        $ErrorMessage = Get-CippException -Exception $_
+        Write-LogMessage -headers $Headers -API $APINAME -message "Failed to run GDAP check for $($TenantFilter): $($ErrorMessage.NormalizedError)" -Sev 'Error' -LogData $ErrorMessage
     }
 
-    return [PSCustomObject]@{
+    $GDAPRelationships = [PSCustomObject]@{
         GDAPIssues     = @($GDAPissues)
         MissingGroups  = @($MissingGroups)
         Memberships    = @($SAMUserMemberships)
         CIPPGroupCount = $CIPPGroupCount
     }
+
+    $Table = Get-CIPPTable -TableName AccessChecks
+    $Data = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq 'AccessCheck' and RowKey eq 'GDAPRelationships'"
+
+    if ($Data) {
+        $Data.Data = [string](ConvertTo-Json -InputObject $GDAPRelationships -Depth 10 -Compress)
+    } else {
+        $Data = @{
+            PartitionKey = 'AccessCheck'
+            RowKey       = 'GDAPRelationships'
+            Data         = [string](ConvertTo-Json -InputObject $GDAPRelationships -Depth 10 -Compress)
+        }
+    }
+    try {
+        Add-CIPPAzDataTableEntity @Table -Entity $Data -Force
+    } catch {}
+
+    return $GDAPRelationships
 }

@@ -3,19 +3,21 @@ using namespace System.Net
 Function Invoke-ExecOneDriveShortCut {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Identity.User.ReadWrite
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
 
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $APIName = $Request.Params.CIPPEndpoint
+    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
 
     Try {
-        $MessageResult = New-CIPPOneDriveShortCut -username $Request.body.username -userid $Request.body.userid -TenantFilter $Request.Body.TenantFilter -URL $Request.body.input -ExecutingUser $request.headers.'x-ms-client-principal'
+        $MessageResult = New-CIPPOneDriveShortCut -username $Request.Body.username -userid $Request.Body.userid -TenantFilter $Request.Body.tenantFilter -URL $Request.Body.siteUrl.value -Headers $Request.Headers
         $Results = [pscustomobject]@{ 'Results' = "$MessageResult" }
     } catch {
-        $Results = [pscustomobject]@{'Results' = "Onedrive Shortcut creation failed: $($_.Exception.Message)" }
+        $Results = [pscustomobject]@{'Results' = "OneDrive Shortcut creation failed: $($_.Exception.Message)" }
     }
 
     # Associate values to output bindings by calling 'Push-OutputBinding'.

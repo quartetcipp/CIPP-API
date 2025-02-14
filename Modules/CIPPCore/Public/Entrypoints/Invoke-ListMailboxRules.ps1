@@ -3,17 +3,12 @@ using namespace System.Net
 Function Invoke-ListMailboxRules {
     <#
     .FUNCTIONALITY
-    Entrypoint
+        Entrypoint
+    .ROLE
+        Exchange.Mailbox.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $TriggerMetadata.FunctionName
-    Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -message 'Accessed this API' -Sev 'Debug'
-
-
-    # Write to the Azure Functions log stream.
-    Write-Host 'PowerShell HTTP trigger function processed a request.'
 
     # Interact with query parameters or the body of the request.
     $TenantFilter = $Request.Query.TenantFilter
@@ -24,20 +19,22 @@ Function Invoke-ListMailboxRules {
     }
     $Rows = Get-CIPPAzDataTableEntity @Table | Where-Object -Property Timestamp -GT (Get-Date).Addhours(-1)
 
-    if (!$Rows) {
-        #Push-OutputBinding -Name mbxrulequeue -Value $TenantFilter
-        $GraphRequest = [PSCustomObject]@{
-            Tenant   = 'Loading data. Please check back in 1 minute'
-            Licenses = 'Loading data. Please check back in 1 minute'
+    $Metadata = @{}
+    if (!$Rows -or ($TenantFilter -eq 'AllTenants' -and ($Rows | Measure-Object).Count -eq 1)) {
+        $Metadata = [PSCustomObject]@{
+            QueueMessage = 'Loading data. Please check back in 1 minute'
         }
-        $Batch = if ($TenantFilter -eq 'AllTenants') {
-            Get-Tenants -IncludeErrors | ForEach-Object { $_ | Add-Member -NotePropertyName FunctionName -NotePropertyValue 'ListMailboxRulesQueue'; $_ }
+        $GraphRequest = @()
+
+        if ($TenantFilter -eq 'AllTenants') {
+            $Tenants = Get-Tenants -IncludeErrors | Select-Object defaultDomainName
+            $Type = 'All Tenants'
         } else {
-            [PSCustomObject]@{
-                defaultDomainName = $TenantFilter
-                FunctionName      = 'ListMailboxRulesQueue'
-            }
+            $Tenants = @(@{ defaultDomainName = $TenantFilter })
+            $Type = $TenantFilter
         }
+        $Queue = New-CippQueueEntry -Name "Mailbox Rules ($Type)" -TotalTasks ($Tenants | Measure-Object).Count
+        $Batch = $Tenants | Select-Object defaultDomainName, @{Name = 'FunctionName'; Expression = { 'ListMailboxRulesQueue' } }, @{Name = 'QueueName'; Expression = { $_.defaultDomainName } }, @{Name = 'QueueId'; Expression = { $Queue.RowKey } }
         if (($Batch | Measure-Object).Count -gt 0) {
             $InputObject = [PSCustomObject]@{
                 OrchestratorName = 'ListMailboxRulesOrchestrator'
@@ -45,7 +42,7 @@ Function Invoke-ListMailboxRules {
                 SkipLog          = $true
             }
             #Write-Host ($InputObject | ConvertTo-Json)
-            $InstanceId = Start-NewOrchestration -FunctionName 'CIPPOrchestrator' -InputObject ($InputObject | ConvertTo-Json -Depth 5)
+            $InstanceId = Start-NewOrchestration -FunctionName 'CIPPOrchestrator' -InputObject ($InputObject | ConvertTo-Json -Depth 5 -Compress)
             Write-Host "Started permissions orchestration with ID = '$InstanceId'"
         }
 
@@ -54,15 +51,20 @@ Function Invoke-ListMailboxRules {
             $Rows = $Rows | Where-Object -Property Tenant -EQ $TenantFilter
         }
         $GraphRequest = $Rows | ForEach-Object {
-            $NewObj = $_.Rules | ConvertFrom-Json
-            $NewObj | Add-Member -NotePropertyName 'Tenant' -NotePropertyValue $_.Tenant
+            $NewObj = $_.Rules | ConvertFrom-Json -ErrorAction SilentlyContinue
+            $NewObj | Add-Member -NotePropertyName 'Tenant' -NotePropertyValue $_.Tenant -Force
             $NewObj
         }
     }
 
+    $Body = @{
+        Results  = @($GraphRequest)
+        Metadata = $Metadata
+    }
+
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
-            Body       = @($GraphRequest)
+            Body       = $Body
         })
 
 }
